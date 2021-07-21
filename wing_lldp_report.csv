@@ -1,4 +1,4 @@
 Device name, lldp neighbor name, lldp neighbor port
-AP8533-PTP-RT, SR2208P,1/0/1
-AP-OFFICE-7532-01, SR2208P,1/0/2
-AP7532-PTP-BR, USW-Switch,Port 10
+AP8533-PTP-RT, SR2208P, 1/0/1
+AP7532-PTP-BR, USW-Switch, Port 10
+AP-OFFICE-7532-01, SR2208P, 1/0/2

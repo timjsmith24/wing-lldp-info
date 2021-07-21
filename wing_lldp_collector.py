@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore")
 # Wing Controller info
 wlc = "10.0.20.4"
 login = {"user":"admin","password":"c0bra42b"}
+
 # RF-Domain the controller is assigned - this rf-domain will be skipped to not check for devices
 CentralDomain = 'Central'
 
@@ -28,16 +29,33 @@ HEADERS= {
 # logging file and info
 PATH = os.path.dirname(os.path.abspath(__file__))
 logging.basicConfig(
-	filename='{}/wing_lldp_collector.log'.format(PATH),
-	filemode='a',
-	level=os.environ.get("LOGLEVEL", "INFO"),
+    filename='{}/wing_lldp_collector.log'.format(PATH),
+    filemode='a',
+    level=os.environ.get("LOGLEVEL", "INFO"),
     format= '%(asctime)s: %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+def debug_print(msg, status):
+    lines = msg.splitlines()
+    if status == "error":
+        for line in lines:
+            #print("ERROR: " + line)
+            logging.error(line)
+    elif status == "warning":
+        for line in lines:
+            #print("WARNING: " + line)
+            logging.warning(line)
 
 def get_api_token():
     url = '{}/v1/act/login'.format(baseurl)
     try:
         r = requests.get(url, headers=HEADERS, verify=False, auth=(login['user'], login['password']), timeout=3)
+    except requests.ConnectionError as e:
+        raise TypeError(f"Connection Error - {e}")
+    except requests.exceptions.HTTPError as e:
+        raise TypeError(f"HTTP Error - {e}")
+    except requests.exceptions.Timeout:
+        raise TypeError("API call timeout")
     except:
         raise TypeError("API Auth request failed")
     data = json.loads(r.text)
@@ -48,6 +66,12 @@ def close_api_session():
     url = '{}/v1/act/logout'.format(baseurl)
     try:
         r = requests.post(url, headers=HEADERS, verify=False, timeout=3)
+    except requests.ConnectionError as e:
+        raise TypeError(f"Connection Error - {e}")
+    except requests.exceptions.HTTPError as e:
+        raise TypeError(f"HTTP Error - {e}")
+    except requests.exceptions.Timeout:
+        raise TypeError("API call timeout")
     except:
         raise TypeError("API close session request failed")
     try:
@@ -55,15 +79,16 @@ def close_api_session():
     except:
         logmsg = r.text
         log_msg = "Closing sessions {} failed with message: {}".format(HEADERS['cookie'],logmsg)
-        logging.error(log_msg)
+        debug_print(log_msg, 'error')
         raise TypeError("Failed to close session {}".format(HEADERS['cookie']))
     if 'return_code' in data:
         if data['return_code'] != 0:
-            logging.error("\n\nClosing session returned error {} for sessions {}").format(data['return_code'],HEADERS['cookie'])
+            debug_print("\n\nClosing session returned error {} for sessions {}").format(data['return_code'],HEADERS['cookie'], 'error')
         #else:
         #    print("\n\nSuccessfully closed session")
 
-def post_api_call(url, rf_domain=None, device=None):
+def post_api_call(url, rf_domain=None, device=None, tokenheader=None):
+    global HEADERS
     url = '{}{}'.format(baseurl,url) 
     if rf_domain:
         payload = "{\n\t\"rf-domain\":\"RF_DOMAIN\"\n}"
@@ -73,18 +98,29 @@ def post_api_call(url, rf_domain=None, device=None):
         payload=payload.replace('DEVICE',device)
     else:
         payload = {}
+    if tokenheader:
+        HEADERS = tokenheader
     try:
-        r = requests.post(url, headers=HEADERS, data=payload, verify=False, timeout=3)
+        r = requests.post(url, headers=HEADERS, data=payload, verify=False, timeout=10)
+    except requests.ConnectionError as e:
+        raise TypeError(f"Connection Error - {e}")
+    except requests.exceptions.HTTPError as e:
+        raise TypeError(f"HTTP Error - {e}")
+    except requests.exceptions.Timeout:
+        raise TypeError("API call timeout")
     except:
         log_msg = "API request {} failed for site {}".format(url, rf_domain)
-        logging.error(log_msg)
+        debug_print(log_msg, 'error')
         raise TypeError(log_msg)
     try:
         data = json.loads(r.text)
+    except ValueError as e:
+        print(e)
+        raise TypeError("Response was not in json format")
     except:
         logmsg = r.text
         log_msg = "API post call failed with message: {}".format(logmsg)
-        logging.error(log_msg)
+        debug_print(log_msg, 'error')
         raise TypeError("Failed to read info from API request {}".format(url))
     if data['return_code'] == 0:
         return(data['data'])
@@ -95,20 +131,28 @@ def post_api_call(url, rf_domain=None, device=None):
 def lldp_collector(apname, HEADERS, mp_queue):
     url = '/v1/stats/lldp-neighbors'
     try:
-        rawlldp = post_api_call(url, device=apname)
+        rawlldp = post_api_call(url, device=apname, tokenheader=HEADERS)
     except TypeError as e:
-        print(f"{str(e)} on {apname}")
+        debug_print(f"{str(e)} on {apname}", 'error')
         exit()
     except:
-        print(f'UNKNOWN ERROR: LLDP API Failed on {apname}')
-    mp_queue.put(f"{apname}, {rawlldp[0]['dev_id']},{rawlldp[0]['port_id']}\n")
-    close_api_session()
+        debug_print(f'UNKNOWN ERROR: LLDP API Failed on {apname}', 'error')
+        exit()
+    mp_queue.put(f"{apname}, {rawlldp[0]['dev_id']}, {rawlldp[0]['port_id']}\n")
+   
 
 
 def main():
     global HEADERS
     ap_list = []
-    auth_token = get_api_token()
+    try:
+        auth_token = get_api_token()
+    except TypeError as e:
+        print(e)
+        exit()
+    except:
+        print("Failed to generate token")
+        exit()
     HEADERS['cookie']='auth_token={}'.format(auth_token)
     url = '/v1/stats/noc/domains'
     try:
@@ -123,7 +167,7 @@ def main():
     for domain in rawList:
         domain_name = (domain['name'])
         if domain_name == CentralDomain:
-            print(f"Skipping domain '{domain_name}': Flagged as controller domain")
+            debug_print(f"Skipping domain '{domain_name}': Flagged as controller domain", 'warning')
             continue
         try:
             ap_info = post_api_call(url, rf_domain=domain_name)
@@ -133,14 +177,14 @@ def main():
         except ValueError as e:
             if 'Unable to locate rf-domain manager' in str(e):
                 log_msg = (f"Skipping domain '{domain_name}': Unable to locate rf-domain manager")
-                logging.warning(log_msg)
-                print(log_msg)
+                debug_print(log_msg, 'warning')
                 continue
             else:
-                print(e)
+                debug_print(e, 'error')
                 exit()
         except:
-            print('Unknown')
+            log_msg = ('Domain API called for unknown reason')
+            debug_print(log_msg, 'error')
             exit()
         for device in ap_info:
             ap_list.append(device['hostname'])
@@ -148,13 +192,14 @@ def main():
     try:
         close_api_session()
     except TypeError as e:
-        print(e)
+        if 'Failed to close session' not in e:
+            debug_print(e, 'error')
     except:
-        print(f"Failed to disconnect {HEADERS['cookie']}")
-    ### add some Logging?
+        log_msg = (f"Failed to disconnect {HEADERS['cookie']}")
+        debug_print(log_msg, 'error')
     msg = 'Device name, lldp neighbor name, lldp neighbor port\n'
     # Sets amount of Per Device API calls to make simultaneously
-    sizeofbatch = 50
+    sizeofbatch = 100
     for i in range(0, len(ap_list), sizeofbatch):
         batch = ap_list[i:i+sizeofbatch]
         mp_queue = multiprocessing.Queue()
