@@ -219,6 +219,14 @@ def main():
         mp_queue.put('STOP')
         for line in iter(mp_queue.get, 'STOP'):
             msg += line
+        try:
+            close_api_session()
+        except TypeError as e:
+            if 'Failed to close session' not in e:
+                debug_print(e, 'error')
+        except:
+            log_msg = (f"Failed to disconnect {HEADERS['cookie']}")
+            debug_print(log_msg, 'error')
 
     with open(filename, 'w') as f:
         f.write(msg)
