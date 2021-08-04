@@ -8,16 +8,16 @@ import multiprocessing
 
 warnings.filterwarnings("ignore")
 
-# Wing Controller info
-wlc = "10.0.20.4"
-login = {"user":"admin","password":"c0bra42b"}
+#Wing Controller info
+wlc = "<IP ADDRESS OR DNS NAME>"
+login = {"user":"<NAME>","password":"<PASSWORD>"}
 
 # RF-Domain the controller is assigned - this rf-domain will be skipped to not check for devices
-CentralDomain = 'Central'
+CentralDomain = "<RF-DOMAIN>"
 
 #name of file - full path can be added to store in a seperate location
-filename = 'wing_lldp_report.csv'
-#filename = '/Users/timsmith/Desktop/wing_lldp_report.csv'
+filename = "<CSV file name>"
+#filename = '/File/Path/<CSV file name>'
 
 baseurl = 'https://{}/rest'.format(wlc)
 
